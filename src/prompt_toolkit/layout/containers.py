@@ -1153,6 +1153,7 @@ class WindowRenderInfo:
         self.window = window
         self.ui_content = ui_content
         self.vertical_scroll = vertical_scroll
+        self.horizontal_scroll = horizontal_scroll
         self.window_width = window_width  # Width without margins.
         self.window_height = window_height
 
