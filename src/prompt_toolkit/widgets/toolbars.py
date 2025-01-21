@@ -261,7 +261,7 @@ class SearchToolbar:
 
 
 class _CompletionsToolbarControl(UIControl):
-    def create_content(self, width: int, height: int) -> UIContent:
+    async def create_content(self, width: int, height: int) -> UIContent:
         all_fragments: StyleAndTextTuples = []
 
         complete_state = get_app().current_buffer.complete_state

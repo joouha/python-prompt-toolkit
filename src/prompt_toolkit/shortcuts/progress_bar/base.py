@@ -288,7 +288,7 @@ class _ProgressControl(UIControl):
         self.formatter = formatter
         self._key_bindings = create_key_bindings(cancel_callback)
 
-    def create_content(self, width: int, height: int) -> UIContent:
+    async def create_content(self, width: int, height: int) -> UIContent:
         items: list[StyleAndTextTuples] = []
 
         for pr in self.progress_bar.counters:

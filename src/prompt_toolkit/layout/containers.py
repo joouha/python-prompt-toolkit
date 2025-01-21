@@ -5,6 +5,7 @@ Container for the layout.
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABCMeta, abstractmethod
 from enum import Enum
 from functools import partial
@@ -92,21 +93,23 @@ class Container(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def preferred_width(self, max_available_width: int) -> Dimension:
+    async def preferred_width(self, max_available_width: int) -> Dimension:
         """
         Return a :class:`~prompt_toolkit.layout.Dimension` that represents the
         desired width for this container.
         """
 
     @abstractmethod
-    def preferred_height(self, width: int, max_available_height: int) -> Dimension:
+    async def preferred_height(
+        self, width: int, max_available_height: int
+    ) -> Dimension:
         """
         Return a :class:`~prompt_toolkit.layout.Dimension` that represents the
         desired height for this container.
         """
 
     @abstractmethod
-    def write_to_screen(
+    async def write_to_screen(
         self,
         screen: Screen,
         mouse_handlers: MouseHandlers,
@@ -301,23 +304,30 @@ class HSplit(_Split):
         )
         self._remaining_space_window = Window()  # Dummy window.
 
-    def preferred_width(self, max_available_width: int) -> Dimension:
+    async def preferred_width(self, max_available_width: int) -> Dimension:
         if self.width is not None:
             return to_dimension(self.width)
 
         if self.children:
-            dimensions = [c.preferred_width(max_available_width) for c in self.children]
+            dimensions = await asyncio.gather(
+                *(c.preferred_width(max_available_width) for c in self.children)
+            )
             return max_layout_dimensions(dimensions)
         else:
             return Dimension()
 
-    def preferred_height(self, width: int, max_available_height: int) -> Dimension:
+    async def preferred_height(
+        self, width: int, max_available_height: int
+    ) -> Dimension:
         if self.height is not None:
             return to_dimension(self.height)
 
-        dimensions = [
-            c.preferred_height(width, max_available_height) for c in self._all_children
-        ]
+        dimensions = await asyncio.gather(
+            *(
+                c.preferred_height(width, max_available_height)
+                for c in self._all_children
+            )
+        )
         return sum_layout_dimensions(dimensions)
 
     def reset(self) -> None:
@@ -358,7 +368,7 @@ class HSplit(_Split):
 
         return self._children_cache.get(tuple(self.children), get)
 
-    def write_to_screen(
+    async def write_to_screen(
         self,
         screen: Screen,
         mouse_handlers: MouseHandlers,
@@ -378,7 +388,7 @@ class HSplit(_Split):
         z_index = z_index if self.z_index is None else self.z_index
 
         if sizes is None:
-            self.window_too_small.write_to_screen(
+            await self.window_too_small.write_to_screen(
                 screen, mouse_handlers, write_position, style, erase_bg, z_index
             )
         else:
@@ -389,7 +399,7 @@ class HSplit(_Split):
 
             # Draw child panes.
             for s, c in zip(sizes, self._all_children):
-                c.write_to_screen(
+                await c.write_to_screen(
                     screen,
                     mouse_handlers,
                     WritePosition(xpos, ypos, width, s),
@@ -406,7 +416,7 @@ class HSplit(_Split):
             # when it's not required. This is required to apply the styling.
             remaining_height = write_position.ypos + write_position.height - ypos
             if remaining_height > 0:
-                self._remaining_space_window.write_to_screen(
+                await self._remaining_space_window.write_to_screen(
                     screen,
                     mouse_handlers,
                     WritePosition(xpos, ypos, width, remaining_height),
@@ -415,7 +425,7 @@ class HSplit(_Split):
                     z_index,
                 )
 
-    def _divide_heights(self, write_position: WritePosition) -> list[int] | None:
+    async def _divide_heights(self, write_position: WritePosition) -> list[int] | None:
         """
         Return the heights for all rows.
         Or None when there is not enough space.
@@ -427,7 +437,9 @@ class HSplit(_Split):
         height = write_position.height
 
         # Calculate heights.
-        dimensions = [c.preferred_height(width, height) for c in self._all_children]
+        dimensions = await asyncio.gather(
+            *(c.preferred_height(width, height) for c in self._all_children)
+        )
 
         # Sum dimensions
         sum_dimensions = sum_layout_dimensions(dimensions)
@@ -538,17 +550,19 @@ class VSplit(_Split):
         )
         self._remaining_space_window = Window()  # Dummy window.
 
-    def preferred_width(self, max_available_width: int) -> Dimension:
+    async def preferred_width(self, max_available_width: int) -> Dimension:
         if self.width is not None:
             return to_dimension(self.width)
 
-        dimensions = [
-            c.preferred_width(max_available_width) for c in self._all_children
-        ]
+        dimensions = await asyncio.gather(
+            *(c.preferred_width(max_available_width) for c in self._all_children)
+        )
 
         return sum_layout_dimensions(dimensions)
 
-    def preferred_height(self, width: int, max_available_height: int) -> Dimension:
+    async def preferred_height(
+        self, width: int, max_available_height: int
+    ) -> Dimension:
         if self.height is not None:
             return to_dimension(self.height)
 
@@ -560,16 +574,18 @@ class VSplit(_Split):
         # height was more than required. (we had a `BufferControl` which did
         # wrap lines because of the smaller width returned by `_divide_widths`.
 
-        sizes = self._divide_widths(width)
+        sizes = await self._divide_widths(width)
         children = self._all_children
 
         if sizes is None:
             return Dimension()
         else:
-            dimensions = [
-                c.preferred_height(s, max_available_height)
-                for s, c in zip(sizes, children)
-            ]
+            dimensions = await asyncio.gather(
+                *(
+                    c.preferred_height(s, max_available_height)
+                    for s, c in zip(sizes, children)
+                )
+            )
             return max_layout_dimensions(dimensions)
 
     def reset(self) -> None:
@@ -610,7 +626,7 @@ class VSplit(_Split):
 
         return self._children_cache.get(tuple(self.children), get)
 
-    def _divide_widths(self, width: int) -> list[int] | None:
+    async def _divide_widths(self, width: int) -> list[int] | None:
         """
         Return the widths for all columns.
         Or None when there is not enough space.
@@ -621,7 +637,7 @@ class VSplit(_Split):
             return []
 
         # Calculate widths.
-        dimensions = [c.preferred_width(width) for c in children]
+        dimensions = await asyncio.gather(*(c.preferred_width(width) for c in children))
         preferred_dimensions = [d.preferred for d in dimensions]
 
         # Sum dimensions
@@ -661,7 +677,7 @@ class VSplit(_Split):
 
         return sizes
 
-    def write_to_screen(
+    async def write_to_screen(
         self,
         screen: Screen,
         mouse_handlers: MouseHandlers,
@@ -680,23 +696,25 @@ class VSplit(_Split):
             return
 
         children = self._all_children
-        sizes = self._divide_widths(write_position.width)
+        sizes = await self._divide_widths(write_position.width)
         style = parent_style + " " + to_str(self.style)
         z_index = z_index if self.z_index is None else self.z_index
 
         # If there is not enough space.
         if sizes is None:
-            self.window_too_small.write_to_screen(
+            await self.window_too_small.write_to_screen(
                 screen, mouse_handlers, write_position, style, erase_bg, z_index
             )
             return
 
         # Calculate heights, take the largest possible, but not larger than
         # write_position.height.
-        heights = [
-            child.preferred_height(width, write_position.height).preferred
-            for width, child in zip(sizes, children)
-        ]
+        heights = await asyncio.gather(
+            *(
+                child.preferred_height(width, write_position.height).preferred
+                for width, child in zip(sizes, children)
+            )
+        )
         height = max(write_position.height, min(write_position.height, max(heights)))
 
         #
@@ -705,7 +723,7 @@ class VSplit(_Split):
 
         # Draw all child panes.
         for s, c in zip(sizes, children):
-            c.write_to_screen(
+            await c.write_to_screen(
                 screen,
                 mouse_handlers,
                 WritePosition(xpos, ypos, s, height),
@@ -722,7 +740,7 @@ class VSplit(_Split):
         # when it's not required. This is required to apply the styling.
         remaining_width = write_position.xpos + write_position.width - xpos
         if remaining_width > 0:
-            self._remaining_space_window.write_to_screen(
+            await self._remaining_space_window.write_to_screen(
                 screen,
                 mouse_handlers,
                 WritePosition(xpos, ypos, remaining_width, height),
@@ -774,18 +792,20 @@ class FloatContainer(Container):
         for f in self.floats:
             f.content.reset()
 
-    def preferred_width(self, max_available_width: int) -> Dimension:
-        return self.content.preferred_width(max_available_width)
+    async def preferred_width(self, max_available_width: int) -> Dimension:
+        return await self.content.preferred_width(max_available_width)
 
-    def preferred_height(self, width: int, max_available_height: int) -> Dimension:
+    async def preferred_height(
+        self, width: int, max_available_height: int
+    ) -> Dimension:
         """
         Return the preferred height of the float container.
         (We don't care about the height of the floats, they should always fit
         into the dimensions provided by the container.)
         """
-        return self.content.preferred_height(width, max_available_height)
+        return await self.content.preferred_height(width, max_available_height)
 
-    def write_to_screen(
+    async def write_to_screen(
         self,
         screen: Screen,
         mouse_handlers: MouseHandlers,
@@ -797,7 +817,7 @@ class FloatContainer(Container):
         style = parent_style + " " + to_str(self.style)
         z_index = z_index if self.z_index is None else self.z_index
 
-        self.content.write_to_screen(
+        await self.content.write_to_screen(
             screen, mouse_handlers, write_position, style, erase_bg, z_index
         )
 
@@ -820,8 +840,7 @@ class FloatContainer(Container):
                 )  # Draw as late as possible, but keep the order.
                 screen.draw_with_z_index(
                     z_index=new_z_index,
-                    draw_func=partial(
-                        self._draw_float,
+                    draw_func=self._draw_float(
                         fl,
                         screen,
                         mouse_handlers,
@@ -832,7 +851,7 @@ class FloatContainer(Container):
                     ),
                 )
             else:
-                self._draw_float(
+                await self._draw_float(
                     fl,
                     screen,
                     mouse_handlers,
@@ -842,7 +861,7 @@ class FloatContainer(Container):
                     new_z_index,
                 )
 
-    def _draw_float(
+    async def _draw_float(
         self,
         fl: Float,
         screen: Screen,
@@ -887,7 +906,9 @@ class FloatContainer(Container):
         # Near x position of cursor.
         elif fl.xcursor:
             if fl_width is None:
-                width = fl.content.preferred_width(write_position.width).preferred
+                width = (
+                    await fl.content.preferred_width(write_position.width)
+                ).preferred
                 width = min(write_position.width, width)
             else:
                 width = fl_width
@@ -901,7 +922,7 @@ class FloatContainer(Container):
             width = fl_width
         # Otherwise, take preferred width from float content.
         else:
-            width = fl.content.preferred_width(write_position.width).preferred
+            width = (await fl.content.preferred_width(write_position.width)).preferred
 
             if fl.left is not None:
                 xpos = fl.left
@@ -930,8 +951,8 @@ class FloatContainer(Container):
             ypos = cursor_position.y + (0 if fl.allow_cover_cursor else 1)
 
             if fl_height is None:
-                height = fl.content.preferred_height(
-                    width, write_position.height
+                height = (
+                    await fl.content.preferred_height(width, write_position.height)
                 ).preferred
             else:
                 height = fl_height
@@ -954,7 +975,9 @@ class FloatContainer(Container):
             height = fl_height
         # Otherwise, take preferred height from content.
         else:
-            height = fl.content.preferred_height(width, write_position.height).preferred
+            height = (
+                await fl.content.preferred_height(width, write_position.height)
+            ).preferred
 
             if fl.top is not None:
                 ypos = fl.top
@@ -977,7 +1000,7 @@ class FloatContainer(Container):
             )
 
             if not fl.hide_when_covering_content or self._area_is_empty(screen, wp):
-                fl.content.write_to_screen(
+                await fl.content.write_to_screen(
                     screen,
                     mouse_handlers,
                     wp,
@@ -1382,6 +1405,9 @@ class WindowAlign(Enum):
     CENTER = "CENTER"
 
 
+from euporie.core.cache import ASimpleCache
+
+
 class Window(Container):
     """
     Container that holds a control.
@@ -1499,10 +1525,10 @@ class Window(Container):
         self.z_index = z_index
 
         # Cache for the screens generated by the margin.
-        self._ui_content_cache: SimpleCache[tuple[int, int, int], UIContent] = (
-            SimpleCache(maxsize=8)
+        self._ui_content_cache: ASimpleCache[tuple[int, int, int], UIContent] = (
+            ASimpleCache(maxsize=8)
         )
-        self._margin_width_cache: SimpleCache[tuple[Margin, int], int] = SimpleCache(
+        self._margin_width_cache: ASimpleCache[tuple[Margin, int], int] = ASimpleCache(
             maxsize=1
         )
 
@@ -1527,46 +1553,52 @@ class Window(Container):
         #: output.)
         self.render_info: WindowRenderInfo | None = None
 
-    def _get_margin_width(self, margin: Margin) -> int:
+    async def _get_margin_width(self, margin: Margin) -> int:
         """
         Return the width for this margin.
         (Calculate only once per render time.)
         """
 
         # Margin.get_width, needs to have a UIContent instance.
-        def get_ui_content() -> UIContent:
-            return self._get_ui_content(width=0, height=0)
+        async def get_ui_content() -> UIContent:
+            return await self._get_ui_content(width=0, height=0)
 
-        def get_width() -> int:
-            return margin.get_width(get_ui_content)
+        async def get_width() -> int:
+            return await margin.get_width(get_ui_content)
 
         key = (margin, get_app().render_counter)
-        return self._margin_width_cache.get(key, get_width)
+        return await self._margin_width_cache.aget(key, get_width)
 
-    def _get_total_margin_width(self) -> int:
+    async def _get_total_margin_width(self) -> int:
         """
         Calculate and return the width of the margin (left + right).
         """
-        return sum(self._get_margin_width(m) for m in self.left_margins) + sum(
-            self._get_margin_width(m) for m in self.right_margins
+        return sum(
+            await asyncio.gather(
+                *(self._get_margin_width(m) for m in self.left_margins)
+            )
+        ) + sum(
+            await asyncio.gather(
+                *(self._get_margin_width(m) for m in self.right_margins)
+            )
         )
 
-    def preferred_width(self, max_available_width: int) -> Dimension:
+    async def preferred_width(self, max_available_width: int) -> Dimension:
         """
         Calculate the preferred width for this window.
         """
 
-        def preferred_content_width() -> int | None:
+        async def preferred_content_width() -> int | None:
             """Content width: is only calculated if no exact width for the
             window was given."""
             if self.ignore_content_width():
                 return None
 
             # Calculate the width of the margin.
-            total_margin_width = self._get_total_margin_width()
+            total_margin_width = await self._get_total_margin_width()
 
             # Window of the content. (Can be `None`.)
-            preferred_width = self.content.preferred_width(
+            preferred_width = await self.content.preferred_width(
                 max_available_width - total_margin_width
             )
 
@@ -1576,41 +1608,43 @@ class Window(Container):
             return preferred_width
 
         # Merge.
-        return self._merge_dimensions(
+        return await self._merge_dimensions(
             dimension=to_dimension(self.width),
             get_preferred=preferred_content_width,
             dont_extend=self.dont_extend_width(),
         )
 
-    def preferred_height(self, width: int, max_available_height: int) -> Dimension:
+    async def preferred_height(
+        self, width: int, max_available_height: int
+    ) -> Dimension:
         """
         Calculate the preferred height for this window.
         """
 
-        def preferred_content_height() -> int | None:
+        async def preferred_content_height() -> int | None:
             """Content height: is only calculated if no exact height for the
             window was given."""
             if self.ignore_content_height():
                 return None
 
-            total_margin_width = self._get_total_margin_width()
+            total_margin_width = await self._get_total_margin_width()
             wrap_lines = self.wrap_lines()
 
-            return self.content.preferred_height(
+            return await self.content.preferred_height(
                 width - total_margin_width,
                 max_available_height,
                 wrap_lines,
                 self.get_line_prefix,
             )
 
-        return self._merge_dimensions(
+        return await self._merge_dimensions(
             dimension=to_dimension(self.height),
             get_preferred=preferred_content_height,
             dont_extend=self.dont_extend_height(),
         )
 
     @staticmethod
-    def _merge_dimensions(
+    async def _merge_dimensions(
         dimension: Dimension | None,
         get_preferred: Callable[[], int | None],
         dont_extend: bool = False,
@@ -1631,7 +1665,7 @@ class Window(Container):
         else:
             # Otherwise, calculate the preferred dimension from the UI control
             # content.
-            preferred = get_preferred()
+            preferred = await get_preferred()
 
         # When a 'preferred' dimension is given by the UIControl, make sure
         # that it stays within the bounds of the Window.
@@ -1658,16 +1692,16 @@ class Window(Container):
             min=min_, max=max_, preferred=preferred, weight=dimension.weight
         )
 
-    def _get_ui_content(self, width: int, height: int) -> UIContent:
+    async def _get_ui_content(self, width: int, height: int) -> UIContent:
         """
         Create a `UIContent` instance.
         """
 
-        def get_content() -> UIContent:
-            return self.content.create_content(width=width, height=height)
+        async def get_content() -> UIContent:
+            return await self.content.create_content(width=width, height=height)
 
         key = (get_app().render_counter, width, height)
-        return self._ui_content_cache.get(key, get_content)
+        return await self._ui_content_cache.aget(key, get_content)
 
     def _get_digraph_char(self) -> str | None:
         "Return `False`, or the Digraph symbol to be used."
@@ -1680,7 +1714,7 @@ class Window(Container):
             return "?"
         return None
 
-    def write_to_screen(
+    async def write_to_screen(
         self,
         screen: Screen,
         mouse_handlers: MouseHandlers,
@@ -1707,22 +1741,23 @@ class Window(Container):
         if self.dont_extend_width():
             write_position.width = min(
                 write_position.width,
-                self.preferred_width(write_position.width).preferred,
+                (await self.preferred_width(write_position.width)).preferred,
             )
 
         if self.dont_extend_height():
             write_position.height = min(
                 write_position.height,
-                self.preferred_height(
-                    write_position.width, write_position.height
+                (
+                    await self.preferred_height(
+                        write_position.width, write_position.height
+                    )
                 ).preferred,
             )
 
         # Draw
         z_index = z_index if self.z_index is None else self.z_index
 
-        draw_func = partial(
-            self._write_to_screen_at_index,
+        draw_func = self._write_to_screen_at_index(
             screen,
             mouse_handlers,
             write_position,
@@ -1737,7 +1772,7 @@ class Window(Container):
             # Otherwise, postpone.
             screen.draw_with_z_index(z_index=z_index, draw_func=draw_func)
 
-    def _write_to_screen_at_index(
+    async def _write_to_screen_at_index(
         self,
         screen: Screen,
         mouse_handlers: MouseHandlers,
@@ -2613,19 +2648,21 @@ class ConditionalContainer(Container):
     def reset(self) -> None:
         self.content.reset()
 
-    def preferred_width(self, max_available_width: int) -> Dimension:
+    async def preferred_width(self, max_available_width: int) -> Dimension:
         if self.filter():
-            return self.content.preferred_width(max_available_width)
+            return await self.content.preferred_width(max_available_width)
         else:
             return Dimension.zero()
 
-    def preferred_height(self, width: int, max_available_height: int) -> Dimension:
+    async def preferred_height(
+        self, width: int, max_available_height: int
+    ) -> Dimension:
         if self.filter():
-            return self.content.preferred_height(width, max_available_height)
+            return await self.content.preferred_height(width, max_available_height)
         else:
             return Dimension.zero()
 
-    def write_to_screen(
+    async def write_to_screen(
         self,
         screen: Screen,
         mouse_handlers: MouseHandlers,
@@ -2635,7 +2672,7 @@ class ConditionalContainer(Container):
         z_index: int | None,
     ) -> None:
         if self.filter():
-            return self.content.write_to_screen(
+            await self.content.write_to_screen(
                 screen, mouse_handlers, write_position, parent_style, erase_bg, z_index
             )
 
@@ -2667,13 +2704,15 @@ class DynamicContainer(Container):
     def reset(self) -> None:
         self._get_container().reset()
 
-    def preferred_width(self, max_available_width: int) -> Dimension:
-        return self._get_container().preferred_width(max_available_width)
+    async def preferred_width(self, max_available_width: int) -> Dimension:
+        return await self._get_container().preferred_width(max_available_width)
 
-    def preferred_height(self, width: int, max_available_height: int) -> Dimension:
-        return self._get_container().preferred_height(width, max_available_height)
+    async def preferred_height(
+        self, width: int, max_available_height: int
+    ) -> Dimension:
+        return await self._get_container().preferred_height(width, max_available_height)
 
-    def write_to_screen(
+    async def write_to_screen(
         self,
         screen: Screen,
         mouse_handlers: MouseHandlers,
@@ -2682,7 +2721,7 @@ class DynamicContainer(Container):
         erase_bg: bool,
         z_index: int | None,
     ) -> None:
-        self._get_container().write_to_screen(
+        await self._get_container().write_to_screen(
             screen, mouse_handlers, write_position, parent_style, erase_bg, z_index
         )
 

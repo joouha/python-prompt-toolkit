@@ -246,7 +246,7 @@ class Screen:
         """
         self._draw_float_functions.append((z_index, draw_func))
 
-    def draw_all_floats(self) -> None:
+    async def draw_all_floats(self) -> None:
         """
         Draw all float functions in order of z-index.
         """
@@ -259,7 +259,7 @@ class Screen:
             # Draw only one at a time, then sort everything again. Now floats
             # might have been added.
             self._draw_float_functions = functions[1:]
-            functions[0][1]()
+            await functions[0][1]
 
     def append_style_to_content(self, style_str: str) -> None:
         """
@@ -304,7 +304,7 @@ class Screen:
             for x in range(xmin, xmax):
                 cell = row[x]
                 row[x] = char_cache[
-                    cell.char, prepend_style + cell.style + append_style
+                    cell.char, f"{prepend_style}{cell.style}{append_style}"
                 ]
 
 

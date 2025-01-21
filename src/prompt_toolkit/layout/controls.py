@@ -69,10 +69,10 @@ class UIControl(metaclass=ABCMeta):
         # Default reset. (Doesn't have to be implemented.)
         pass
 
-    def preferred_width(self, max_available_width: int) -> int | None:
+    async def preferred_width(self, max_available_width: int) -> int | None:
         return None
 
-    def preferred_height(
+    async def preferred_height(
         self,
         width: int,
         max_available_height: int,
@@ -88,7 +88,7 @@ class UIControl(metaclass=ABCMeta):
         return False
 
     @abstractmethod
-    def create_content(self, width: int, height: int) -> UIContent:
+    async def create_content(self, width: int, height: int) -> UIContent:
         """
         Generate the content for this user control.
 
@@ -339,7 +339,7 @@ class FormattedTextControl(UIControl):
             get_app().render_counter, lambda: to_formatted_text(self.text, self.style)
         )
 
-    def preferred_width(self, max_available_width: int) -> int:
+    async def preferred_width(self, max_available_width: int) -> int:
         """
         Return the preferred width for this control.
         That is the width of the longest line.
@@ -348,7 +348,7 @@ class FormattedTextControl(UIControl):
         line_lengths = [get_cwidth(l) for l in text.split("\n")]
         return max(line_lengths)
 
-    def preferred_height(
+    async def preferred_height(
         self,
         width: int,
         max_available_height: int,
@@ -358,7 +358,7 @@ class FormattedTextControl(UIControl):
         """
         Return the preferred height for this control.
         """
-        content = self.create_content(width, None)
+        content = await self.create_content(width, None)
         if wrap_lines:
             height = 0
             for i in range(content.line_count):
@@ -369,7 +369,7 @@ class FormattedTextControl(UIControl):
         else:
             return content.line_count
 
-    def create_content(self, width: int, height: int | None) -> UIContent:
+    async def create_content(self, width: int, height: int | None) -> UIContent:
         # Get fragments
         fragments_with_mouse_handlers = self._get_formatted_text_cached()
         fragment_lines_with_mouse_handlers = list(
@@ -474,7 +474,7 @@ class DummyControl(UIControl):
     define the filling.)
     """
 
-    def create_content(self, width: int, height: int) -> UIContent:
+    async def create_content(self, width: int, height: int) -> UIContent:
         def get_line(i: int) -> StyleAndTextTuples:
             return []
 
@@ -595,7 +595,7 @@ class BufferControl(UIControl):
     def is_focusable(self) -> bool:
         return self.focusable()
 
-    def preferred_width(self, max_available_width: int) -> int | None:
+    async def preferred_width(self, max_available_width: int) -> int | None:
         """
         This should return the preferred width.
 
@@ -608,7 +608,7 @@ class BufferControl(UIControl):
         """
         return None
 
-    def preferred_height(
+    async def preferred_height(
         self,
         width: int,
         max_available_height: int,
@@ -618,7 +618,9 @@ class BufferControl(UIControl):
         # Calculate the content height, if it was drawn on a screen with the
         # given width.
         height = 0
-        content = self.create_content(width, height=1)  # Pass a dummy '1' as height.
+        content = await self.create_content(
+            width, height=1
+        )  # Pass a dummy '1' as height.
 
         # When line wrapping is off, the height should be equal to the amount
         # of lines.
@@ -716,7 +718,7 @@ class BufferControl(UIControl):
 
         return create_func()
 
-    def create_content(
+    async def create_content(
         self, width: int, height: int, preview_search: bool = False
     ) -> UIContent:
         """

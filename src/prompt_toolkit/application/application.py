@@ -466,13 +466,15 @@ class Application(Generic[_AppResult]):
         # Trigger event.
         self.loop.call_soon_threadsafe(self.on_invalidate.fire)
 
-        def redraw() -> None:
+        async def redraw() -> None:
             self._invalidated = False
-            self._redraw()
+            await self._redraw()
 
         def schedule_redraw() -> None:
             call_soon_threadsafe(
-                redraw, max_postpone_time=self.max_render_postpone_time, loop=self.loop
+                lambda: self.create_background_task(redraw()),
+                max_postpone_time=self.max_render_postpone_time,
+                loop=self.loop,
             )
 
         if self.min_redraw_interval:
@@ -483,7 +485,7 @@ class Application(Generic[_AppResult]):
 
                 async def redraw_in_future() -> None:
                     await sleep(cast(float, self.min_redraw_interval) - diff)
-                    schedule_redraw()
+                    await redraw()
 
                 self.loop.call_soon_threadsafe(
                     lambda: self.create_background_task(redraw_in_future())
@@ -498,7 +500,7 @@ class Application(Generic[_AppResult]):
         "True when a redraw operation has been scheduled."
         return self._invalidated
 
-    def _redraw(self, render_as_done: bool = False) -> None:
+    async def _redraw(self, render_as_done: bool = False) -> None:
         """
         Render the command line again. (Not thread safe!) (From other threads,
         or if unsure, use :meth:`.Application.invalidate`.)
@@ -506,7 +508,7 @@ class Application(Generic[_AppResult]):
         :param render_as_done: make sure to put the cursor after the UI.
         """
 
-        def run_in_context() -> None:
+        async def run_in_context() -> None:
             # Only draw when no sub application was started.
             if self._is_running and not self._running_in_terminal:
                 if self.min_redraw_interval:
@@ -521,9 +523,11 @@ class Application(Generic[_AppResult]):
                         self.renderer.erase()
                     else:
                         # Draw in 'done' state and reset renderer.
-                        self.renderer.render(self, self.layout, is_done=render_as_done)
+                        await self.renderer.render(
+                            self, self.layout, is_done=render_as_done
+                        )
                 else:
-                    self.renderer.render(self, self.layout)
+                    await self.renderer.render(self, self.layout)
 
                 self.layout.update_parents_relations()
 
@@ -540,7 +544,8 @@ class Application(Generic[_AppResult]):
         #       prevent RuntimeErrors. (The rendering is not supposed to change
         #       any context variables.)
         if self.context is not None:
-            self.context.copy().run(run_in_context)
+            # self.context.copy().run(run_in_context)
+            await run_in_context()
 
     def _start_auto_refresh_task(self) -> None:
         """
@@ -587,7 +592,7 @@ class Application(Generic[_AppResult]):
         """
         self.invalidate()
 
-    def _on_resize(self) -> None:
+    async def _on_resize(self) -> None:
         """
         When the window size changes, we erase the current output and request
         again the cursor position. When the CPR answer arrives, the output is
@@ -597,7 +602,7 @@ class Application(Generic[_AppResult]):
         # and redraw again. -- The order is important.
         self.renderer.erase(leave_alternate_screen=False)
         self._request_absolute_cursor_position()
-        self._redraw()
+        await self._redraw()
 
     def _pre_run(self, pre_run: Callable[[], None] | None = None) -> None:
         """
@@ -736,7 +741,7 @@ class Application(Generic[_AppResult]):
             ), attach_winch_signal_handler(self._on_resize):
                 # Draw UI.
                 self._request_absolute_cursor_position()
-                self._redraw()
+                await self._redraw()
                 self._start_auto_refresh_task()
 
                 self.create_background_task(self._poll_output_size())
@@ -748,7 +753,7 @@ class Application(Generic[_AppResult]):
                     # In any case, when the application finishes.
                     # (Successful, or because of an error.)
                     try:
-                        self._redraw(render_as_done=True)
+                        await self._redraw(render_as_done=True)
                     finally:
                         # _redraw has a good chance to fail if it calls widgets
                         # with bad code. Make sure to reset the renderer
@@ -1227,7 +1232,7 @@ class Application(Generic[_AppResult]):
             new_size = self.output.get_size()
 
             if size is not None and new_size != size:
-                self._on_resize()
+                await self._on_resize()
             size = new_size
 
     def cpr_not_supported_callback(self) -> None:
@@ -1578,18 +1583,19 @@ def attach_winch_signal_handler(
     loop = get_running_loop()
     previous_winch_handler = getattr(loop, "_signal_handlers", {}).get(sigwinch)
 
-    try:
-        loop.add_signal_handler(sigwinch, handler)
-        yield
-    finally:
-        # Restore the previous signal handler.
-        loop.remove_signal_handler(sigwinch)
-        if previous_winch_handler is not None:
-            loop.add_signal_handler(
-                sigwinch,
-                previous_winch_handler._callback,
-                *previous_winch_handler._args,
-            )
+    yield
+    # try:
+    #     loop.add_signal_handler(sigwinch, handler)
+    #     yield
+    # finally:
+    #     # Restore the previous signal handler.
+    #     loop.remove_signal_handler(sigwinch)
+    #     if previous_winch_handler is not None:
+    #         loop.add_signal_handler(
+    #             sigwinch,
+    #             previous_winch_handler._callback,
+    #             *previous_winch_handler._args,
+    #         )
 
 
 @contextmanager

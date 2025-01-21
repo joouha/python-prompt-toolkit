@@ -87,7 +87,7 @@ class CompletionsMenuControl(UIControl):
         else:
             return 0
 
-    def create_content(self, width: int, height: int) -> UIContent:
+    async def create_content(self, width: int, height: int) -> UIContent:
         """
         Create a UIContent object for this control.
         """
@@ -391,7 +391,7 @@ class MultiColumnCompletionMenuControl(UIControl):
 
         return int(math.ceil(len(complete_state.completions) / float(column_count)))
 
-    def create_content(self, width: int, height: int) -> UIContent:
+    async def create_content(self, width: int, height: int) -> UIContent:
         """
         Create a UIContent object for this menu.
         """
@@ -721,7 +721,7 @@ class _SelectedCompletionMetaControl(UIControl):
     ) -> int | None:
         return 1
 
-    def create_content(self, width: int, height: int) -> UIContent:
+    async def create_content(self, width: int, height: int) -> UIContent:
         fragments = self._get_text_fragments()
 
         def get_line(i: int) -> StyleAndTextTuples:

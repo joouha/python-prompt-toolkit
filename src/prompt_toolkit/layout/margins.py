@@ -35,7 +35,7 @@ class Margin(metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
+    async def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
         """
         Return the width that this margin is going to consume.
 
@@ -82,8 +82,8 @@ class NumberedMargin(Margin):
         self.relative = to_filter(relative)
         self.display_tildes = to_filter(display_tildes)
 
-    def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
-        line_count = get_ui_content().line_count
+    async def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
+        line_count = (await get_ui_content()).line_count
         return max(3, len(f"{line_count}") + 1)
 
     def create_margin(
@@ -143,9 +143,9 @@ class ConditionalMargin(Margin):
         self.margin = margin
         self.filter = to_filter(filter)
 
-    def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
+    async def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
         if self.filter():
-            return self.margin.get_width(get_ui_content)
+            return await self.margin.get_width(get_ui_content)
         else:
             return 0
 
@@ -175,7 +175,7 @@ class ScrollbarMargin(Margin):
         self.up_arrow_symbol = up_arrow_symbol
         self.down_arrow_symbol = down_arrow_symbol
 
-    def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
+    async def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
         return 1
 
     def create_margin(
@@ -275,7 +275,7 @@ class PromptMargin(Margin):
         self.get_prompt = get_prompt
         self.get_continuation = get_continuation
 
-    def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
+    async def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
         "Width to report to the `Window`."
         # Take the width from the first line.
         text = fragment_list_to_text(self.get_prompt())
